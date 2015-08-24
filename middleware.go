@@ -6,6 +6,9 @@ import (
 	"net/http"
 )
 
+// ContentMiddleware is a Martini handler which specifies the proper
+// serialization (XML/JSON) depending on the "Content-Type" header
+// presented.
 func ContentMiddleware(c martini.Context, w http.ResponseWriter, r *http.Request) {
 	switch r.Header.Get("Content-Type") {
 	case "application/xml":
