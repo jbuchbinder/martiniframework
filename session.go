@@ -3,7 +3,6 @@ package martiniframework
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/redis.v3"
 	"log"
 	"os"
 	"time"
@@ -13,30 +12,34 @@ var (
 	ActiveSession *SessionConnector
 )
 
+type SessionDriver interface {
+	Connect(params map[string]interface{}) error
+	Get(sid string) (string, error)
+	Del(sid string) error
+	Set(sid string, data string, expiry time.Duration) error
+}
+
 type SessionConnector struct {
 	Address       string
 	Password      string
 	DatabaseId    int64
 	SessionLength int64
-
-	client *redis.Client
+	Driver        SessionDriver
 }
 
 type SessionModel struct {
-	SessionId   string `json:"session_id"`
-	UserId      int64  `json:"user_id"`
-	Expires     int64  `json:"expiry_time"`
-	SessionData []byte `json:"session_data"`
+	SessionId   string `json:"session_id" db:"session_id"`
+	UserId      int64  `json:"user_id" db:"user_id"`
+	Expires     int64  `json:"expiry_time" db:"expiry_time"`
+	SessionData []byte `json:"session_data" db:"session_data"`
 }
 
 func (s *SessionConnector) Connect() error {
-	s.client = redis.NewClient(&redis.Options{
-		Addr:     s.Address,
-		Password: s.Password,
-		DB:       s.DatabaseId,
+	return s.Driver.Connect(map[string]interface{}{
+		"Address":    s.Address,
+		"Password":   s.Password,
+		"DatabaseId": s.DatabaseId,
 	})
-	_, err := s.client.Ping().Result()
-	return err
 }
 
 func (s *SessionConnector) CreateSession(uid int64) (SessionModel, error) {
@@ -57,11 +60,7 @@ func (s *SessionConnector) CreateSession(uid int64) (SessionModel, error) {
 
 func (s *SessionConnector) GetSession(sid string) (SessionModel, error) {
 	log.Printf("GetSession(%s)", sid)
-	val, err := s.client.Get(sid).Result()
-	if err == redis.Nil {
-		log.Printf("GetSession(): %s does not exist", sid)
-		return SessionModel{}, err
-	}
+	val, err := s.Driver.Get(sid)
 	if err != nil {
 		return SessionModel{}, err
 	}
@@ -75,7 +74,7 @@ func (s *SessionConnector) GetSession(sid string) (SessionModel, error) {
 
 func (s *SessionConnector) ExpireSession(sid string) error {
 	log.Printf("ExpireSession(%s)", sid)
-	return s.client.Del(sid).Err()
+	return s.Driver.Del(sid)
 }
 
 func (s *SessionConnector) StoreFreshenSession(sm SessionModel) error {
@@ -85,7 +84,7 @@ func (s *SessionConnector) StoreFreshenSession(sm SessionModel) error {
 	if err != nil {
 		return err
 	}
-	return s.client.Set(sm.SessionId, string(b), time.Duration(sm.Expires)*time.Second).Err()
+	return s.Driver.Set(sm.SessionId, string(b), time.Duration(sm.Expires)*time.Second)
 }
 
 func TokenAuthFunc(sid string) (bool, SessionModel) {
