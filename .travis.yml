@@ -6,3 +6,4 @@ before_script:
   - go get -d
 script:
   - go build
+sudo: false
